@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: fb-auto-reply
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: VERIFY_TOKEN
+        value: 123456

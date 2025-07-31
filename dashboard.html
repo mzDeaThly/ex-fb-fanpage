@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>Facebook Pages Dashboard</title>
+</head>
+<body>
+  <h2>Facebook Pages ที่เชื่อมต่อ</h2>
+  <ul>
+    {% for page in pages %}
+      <li>
+        <strong>{{ page.page_name }}</strong> <br>
+        Page ID: {{ page.page_id }} <br>
+        <form action="/update-reply/{{ page.id }}" method="POST">
+          ข้อความตอบกลับ: <input type="text" name="reply_text" value="{{ page.reply_text or '' }}">
+          <button type="submit">💾 บันทึก</button>
+        </form>
+        <form action="/broadcast/{{ page.id }}" method="POST">
+          ข้อความ Broadcast: <input type="text" name="broadcast_text">
+          <button type="submit">📢 ส่ง</button>
+        </form>
+        <hr>
+      </li>
+    {% else %}
+      <li>ยังไม่มีเพจที่เชื่อม</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
