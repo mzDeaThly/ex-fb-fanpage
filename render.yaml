@@ -1,10 +1,25 @@
+# render.yaml
 services:
   - type: web
     name: fb-auto-reply
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app" # แก้ไขให้รันผ่าน Gunicorn
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.6 # ระบุเวอร์ชัน Python
+      - key: FB_APP_ID
+        sync: false # ค่าจริงจะถูกตั้งใน Dashboard ของ Render
+      - key: FB_APP_SECRET
+        sync: false
+      - key: FB_REDIRECT_URI
+        sync: false
       - key: VERIFY_TOKEN
-        value: 123456
+        generateValue: true # ให้ Render สร้างค่าสุ่มให้
+      - key: SECRET_KEY
+        generateValue: true
+
+  - type: psql # เพิ่มบริการฐานข้อมูล PostgreSQL
+    name: fb-database
+    plan: free
