@@ -1,7 +1,7 @@
 import os
-from flask import Flask, render_template, request
+import requests # <--- ย้าย import มาไว้ข้างบนสุด
+from flask import Flask, render_template, request, url_for, redirect
 from models import db, FacebookPage
-# from webhook import webhook  <--- เราจะไม่ใช้ไฟล์นี้แล้ว
 from fb_login import fb_login
 from broadcast import broadcast_bp
 
@@ -16,12 +16,10 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_default_secret_key')
-# --- จบส่วนการตั้งค่า ---
 
 db.init_app(app)
 
-# --- ลงทะเบียน Blueprint อื่นๆ (แต่ลบของ webhook ออก) ---
-# app.register_blueprint(webhook, url_prefix='/') <--- เราจะไม่ใช้บรรทัดนี้แล้ว
+# --- ลงทะเบียน Blueprint อื่นๆ ---
 app.register_blueprint(fb_login, url_prefix='/')
 app.register_blueprint(broadcast_bp, url_prefix='/')
 
@@ -31,54 +29,64 @@ with app.app_context():
 @app.route('/')
 def dashboard():
     pages = FacebookPage.query.all()
-    return render_template('dashboard.html', pages=pages)
+    # เพิ่มโค้ดสำหรับปุ่มเชื่อมต่อในหน้า dashboard
+    show_connect_button = not pages 
+    return render_template('dashboard.html', pages=pages, show_connect_button=show_connect_button)
 
 # =================================================================
-#  ย้ายโค้ด Webhook มาไว้ตรงนี้โดยตรง
+#  โค้ด Webhook ที่สมบูรณ์
 # =================================================================
+def reply_to_comment(comment_id, message, token):
+    url = f"https://graph.facebook.com/v19.0/{comment_id}/comments"
+    params = {"message": message, "access_token": token}
+    requests.post(url, params=params)
+
+def send_private_reply(recipient_id, message, token):
+    url = f"https://graph.facebook.com/v19.0/me/messages?access_token={token}"
+    payload = {
+        "recipient": {"id": recipient_id},
+        "message": {"text": message},
+        "messaging_type": "MESSAGE_TAG",
+        "tag": "POST_PURCHASE_UPDATE" # ใช้ Tag ที่เหมาะสม
+    }
+    requests.post(url, json=payload)
+
 @app.route('/webhook', methods=['GET', 'POST'])
 def handle_webhook():
     if request.method == 'GET':
-        # นี่คือโค้ดสำหรับยืนยันตัวตนกับ Facebook (เวอร์ชันดีบัก)
-        challenge = request.args.get("hub.challenge")
-        verify_token_from_fb = request.args.get("hub.verify_token") # รับ Token ที่ FB ส่งมา
-        
-        # ดึง VERIFY_TOKEN ของเราจาก Environment
         VERIFY_TOKEN_FROM_ENV = os.getenv("VERIFY_TOKEN")
-        
-        # ตรวจสอบ Token และส่ง challenge กลับไป
-        if verify_token_from_fb == VERIFY_TOKEN_FROM_ENV:
-            return challenge, 200
-        else:
-            return "Verification token mismatch", 403
+        if request.args.get("hub.verify_token") == VERIFY_TOKEN_FROM_ENV:
+            return request.args.get("hub.challenge")
+        return "Invalid verification token", 403
 
     elif request.method == 'POST':
-        # ส่วนนี้คือโค้ดสำหรับรับคอมเมนต์จริง (ยังคงเดิม)
         data = request.get_json()
-        for entry in data.get('entry', []):
-            for change in entry.get('changes', []):
-                if change.get('field') == 'feed' and change.get('value', {}).get('item') == 'comment':
-                    page_id = entry.get('id')
-                    comment_id = change.get('value', {}).get('comment_id')
-                    user_id = change.get('value', {}).get('from', {}).get('id')
+        if data and data.get("object") == "page":
+            for entry in data.get("entry", []):
+                for change in entry.get("changes", []):
+                    if change.get("field") == "feed" and change.get("value", {}).get("item") == "comment":
+                        page_id = entry.get("id")
+                        comment_data = change.get("value")
+                        comment_id = comment_data.get("comment_id")
+                        sender_id = comment_data.get("from", {}).get("id")
+                        
+                        # ป้องกันการตอบกลับคอมเมนต์ของตัวเอง
+                        if sender_id == page_id:
+                            continue
 
-                    page = FacebookPage.query.filter_by(page_id=page_id).first()
-                    if page:
-                        # ฟังก์ชันสำหรับตอบกลับ (ต้อง import requests เพิ่มถ้ายังไม่มี)
-                        import requests
-                        def reply_to_comment(c_id, message, token):
-                            url = f"https://graph.facebook.com/v19.0/{c_id}/comments"
-                            requests.post(url, data={"message": message, "access_token": token})
-
-                        reply_to_comment(comment_id, page.reply_text or "ขอบคุณสำหรับความคิดเห็นครับ ❤️", page.access_token)
-
+                        page = FacebookPage.query.filter_by(page_id=page_id).first()
+                        if page and page.access_token:
+                            # ตอบกลับคอมเมนต์
+                            reply_text = page.reply_text or "ขอบคุณสำหรับความคิดเห็นครับ ❤️"
+                            reply_to_comment(comment_id, reply_text, page.access_token)
+                            
+                            # ส่งข้อความเข้า Inbox
+                            inbox_message = "แอดมินได้รับข้อความแล้วครับ ❤️"
+                            send_private_reply(sender_id, inbox_message, page.access_token)
         return "OK", 200
 
     return "Not Found", 404
 
-# =================================================================
-#  จบส่วนของ Webhook
-# =================================================================
-
+# ... (ส่วน if __name__ == '__main__': เหมือนเดิม)
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
