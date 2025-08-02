@@ -19,6 +19,6 @@ services:
       - key: SECRET_KEY
         generateValue: true
 
-  - type: postgres # <--- แก้ไขบรรทัดนี้
-    name: fb-database
+databases:
+  - name: fb-database
     plan: free
