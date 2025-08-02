@@ -35,9 +35,13 @@ def fb_login_redirect():
     auth_url = f"https://www.facebook.com/{FB_API_VERSION}/dialog/oauth?client_id={FB_APP_ID}&redirect_uri={FB_REDIRECT_URI}&scope=pages_manage_metadata,pages_read_engagement,pages_manage_posts,pages_messaging,pages_show_list"
     return redirect(auth_url)
 
+# ในไฟล์ fb_login.py
+
 @fb_login.route("/fb-callback")
 def fb_callback():
+    print("--- DEBUG: Reached /fb-callback route. ---") # จุดที่ 1
     code = request.args.get("code")
+
     token_url = f"https://graph.facebook.com/{FB_API_VERSION}/oauth/access_token"
     params = {
         "client_id": FB_APP_ID,
@@ -47,36 +51,36 @@ def fb_callback():
     }
     response = requests.get(token_url, params=params).json()
     user_token = response.get("access_token")
+    
+    print(f"--- DEBUG: Received User Token: {'Yes' if user_token else 'No'} ---") # จุดที่ 2
 
     if not user_token:
+        print("--- DEBUG: Failed to get user_token. ---")
         return "Error getting user access token.", 400
 
     # Get page list
     page_url = f"https://graph.facebook.com/{FB_API_VERSION}/me/accounts?access_token={user_token}"
-    pages = requests.get(page_url).json().get("data", [])
+    pages_response = requests.get(page_url)
+    
+    print(f"--- DEBUG: Page list API status code: {pages_response.status_code} ---") # จุดที่ 3
+    print(f"--- DEBUG: Page list API response text: {pages_response.text} ---") # จุดที่ 4: นี่คือข้อมูลดิบจาก Facebook
+
+    pages = pages_response.json().get("data", [])
 
     for page_data in pages:
-        existing_page = FacebookPage.query.filter_by(page_id=page_data["id"]).first()
-        
-        # --- ส่วนที่แก้ไข ---
-        # รับ Long-Lived Page Access Token
+        existing = FacebookPage.query.filter_by(page_id=page_data["id"]).first()
         short_lived_page_token = page_data["access_token"]
         long_lived_page_token = get_long_lived_token(short_lived_page_token)
-
         if long_lived_page_token:
-            if existing_page:
-                # ถ้าเพจมีอยู่แล้ว ให้อัปเดต Token
-                existing_page.access_token = long_lived_page_token
-                existing_page.page_name = page_data["name"] # อัปเดตชื่อเผื่อมีการเปลี่ยนแปลง
-            else:
-                # ถ้าเป็นเพจใหม่ ให้สร้างรายการใหม่
+            if not existing:
                 new_page = FacebookPage(
                     page_id=page_data["id"],
                     page_name=page_data["name"],
                     access_token=long_lived_page_token
                 )
                 db.session.add(new_page)
-        # --- จบส่วนที่แก้ไข ---
-        
+            else:
+                existing.access_token = long_lived_page_token
     db.session.commit()
+
     return redirect(url_for("dashboard"))
