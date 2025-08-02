@@ -1,7 +1,7 @@
 # fb_login.py
 import os
 import requests
-from flask import Blueprint, redirect, request, render_template
+from flask import Blueprint, redirect, request, url_for, render_template
 from models import db, FacebookPage
 
 fb_login = Blueprint('fb_login', __name__)
